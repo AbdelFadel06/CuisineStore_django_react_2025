@@ -1,5 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.conf import settings
+from django.utils import timezone
 
 
 class User(AbstractUser):
@@ -7,7 +9,7 @@ class User(AbstractUser):
 
 
 class UserProfile(models.Model):
-  user = models.OneToOneField(User, on_delete=models.CASCADE)
+  user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
   avatar = models.ImageField(upload_to="media/users_profile", blank=True)
 
 
@@ -125,16 +127,45 @@ class CartItem(models.Model):
 
 
 class Promotion(models.Model):
-  name = models.CharField(max_length=200)
-  description = models.TextField(blank=True)
-  discount_type = models.CharField(max_length=10, choices=Coupon.DISCOUNT_TYPES)
-  discount_value = models.DecimalField(max_digits=10, decimal_places=2)
-  applicable_categories = models.ManyToManyField(Category, blank=True)
-  applicable_products = models.ManyToManyField(Product, blank=True)
-  min_order_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-  valid_from = models.DateTimeField()
-  valid_to = models.DateTimeField()
-  active = models.BooleanField(default=True)
+    # Définir les types de réduction directement dans Promotion
+    DISCOUNT_TYPES = (
+        ('percentage', 'Pourcentage'),
+        ('fixed', 'Montant fixe'),
+    )
+
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    discount_type = models.CharField(max_length=10, choices=DISCOUNT_TYPES)
+    discount_value = models.DecimalField(max_digits=10, decimal_places=2)
+    applicable_categories = models.ManyToManyField(Category, blank=True)
+    applicable_products = models.ManyToManyField(Product, blank=True)
+    min_order_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    valid_from = models.DateTimeField()
+    valid_to = models.DateTimeField()
+    active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+    def is_valid(self):
+        """Vérifie si la promotion est actuellement valide"""
+        now = timezone.now()
+        return self.active and self.valid_from <= now <= self.valid_to
+
+    def calculate_discount(self, amount):
+        """Calcule le montant de la réduction"""
+        if not self.is_valid():
+            return 0
+
+        if self.discount_type == 'percentage':
+            discount = amount * (self.discount_value / 100)
+            # Si vous voulez limiter le discount max pour les pourcentages
+            if hasattr(self, 'max_discount'):
+                discount = min(discount, self.max_discount)
+            return discount
+        elif self.discount_type == 'fixed':
+            return min(self.discount_value, amount)
+        return 0
 
 
 class BlogPost(models.Model):
@@ -143,7 +174,7 @@ class BlogPost(models.Model):
   content = models.TextField()
   excerpt = models.TextField(blank=True)
   author = models.ForeignKey(User, on_delete=models.CASCADE)
-  featured_image = models.ImageField(upload_to='blog/', blank=True)
+  featured_image = models.ImageField(upload_to='media/blog/', blank=True)
   published = models.BooleanField(default=False)
   published_at = models.DateTimeField(null=True, blank=True)
   created_at = models.DateTimeField(auto_now_add=True)
