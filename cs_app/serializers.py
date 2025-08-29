@@ -146,3 +146,51 @@ class PromotionSerializer(serializers.ModelSerializer):
   class Meta:
     model = Promotion
     fields = '__all__'
+
+
+class AddToCartSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField(
+        min_value=1,
+        help_text="ID du produit à ajouter au panier"
+    )
+    quantity = serializers.IntegerField(
+        min_value=1,
+        default=1,
+        help_text="Quantité à ajouter (1-10)"
+    )
+
+    def validate_product_id(self, value):
+        try:
+            product = Product.objects.get(id=value)
+
+            if not product.in_stock:
+                raise serializers.ValidationError("Ce produit n'est pas en stock")
+
+            if hasattr(product, 'inventory') and product.inventory.quantity < 1:
+                raise serializers.ValidationError("Produit en rupture de stock")
+
+            return value
+
+        except Product.DoesNotExist:
+            raise serializers.ValidationError("Produit non trouvé")
+
+    def validate(self, data):
+        product_id = data['product_id']
+        quantity = data['quantity']
+
+        try:
+            product = Product.objects.get(id=product_id)
+
+            if hasattr(product, 'inventory'):
+                available_stock = product.inventory.quantity
+                if available_stock < quantity:
+                    raise serializers.ValidationError({
+                        'quantity': f"Stock insuffisant. Seulement {available_stock} disponible(s)"
+                    })
+
+            return data
+
+        except Product.DoesNotExist:
+            raise serializers.ValidationError({
+                'product_id': "Produit non trouvé"
+            })
